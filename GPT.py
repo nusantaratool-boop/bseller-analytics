@@ -634,16 +634,23 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # =====================================
-# 🏠 DASHBOARD
+# 🏠 DASHBOARD (FIX)
 # =====================================
 if active_menu == "🏠 Dashboard":
-    tp = len(st.session_state.pembelian_data) if not st.session_state.pembelian_data.empty else 0
-    tps = len(st.session_state.dana_masuk) if not st.session_state.dana_masuk.empty else 0
-    tpen = pd.to_numeric(st.session_state.dana_masuk['Dibayar Shopee'], errors='coerce').sum() if not st.session_state.dana_masuk.empty and 'Dibayar Shopee' in st.session_state.dana_masuk.columns else 0
+    df_dash = st.session_state.shopee_data.copy()
+    
+    if not df_dash.empty and 'Nama Toko' in df_dash.columns:
+        toko_list = ['Semua Toko'] + sorted(df_dash['Nama Toko'].dropna().unique().tolist())
+        toko_dash = st.selectbox("🏪 Toko", toko_list, key="dash_toko")
+        if toko_dash != 'Semua Toko':
+            df_dash = df_dash[df_dash['Nama Toko'] == toko_dash]
+    
+    tp = len(df_dash)
+    tps = df_dash['No Pesanan'].nunique() if not df_dash.empty and 'No Pesanan' in df_dash.columns else 0
+    tpen = pd.to_numeric(df_dash['Total Pembayaran'], errors='coerce').sum() if not df_dash.empty and 'Total Pembayaran' in df_dash.columns else 0
     tik = pd.to_numeric(st.session_state.iklan_data['Biaya'], errors='coerce').sum() if not st.session_state.iklan_data.empty and 'Biaya' in st.session_state.iklan_data.columns else 0
     roas = round(tpen / tik, 2) if tik > 0 else 0
     
-    # Total Aset = Stok Barang (Harga Beli × Qty)
     total_aset_stok = 0
     if not st.session_state.master_produk.empty and 'Stok_Saat_Ini' in st.session_state.master_produk.columns and 'Harga_Beli' in st.session_state.master_produk.columns:
         for _, r in st.session_state.master_produk.iterrows():
@@ -654,166 +661,11 @@ if active_menu == "🏠 Dashboard":
     st.session_state.total_aset = total_aset_stok
     
     col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.markdown(f"""<div class="metric-card"><div style="font-size:24px;">📦</div><div class="metric-value">{format_angka(tp)}</div><div class="metric-label">Total Pembelian</div></div>""", unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"""<div class="metric-card"><div style="font-size:24px;">🛒</div><div class="metric-value">{format_angka(tps)}</div><div class="metric-label">Total Pesanan</div></div>""", unsafe_allow_html=True)
-    with col3:
-        st.markdown(f"""<div class="metric-card"><div style="font-size:24px;">💰</div><div class="metric-value">{format_rupiah(tpen)}</div><div class="metric-label">Total Penjualan</div></div>""", unsafe_allow_html=True)
-    with col4:
-        # Total Aset dengan expander untuk detail
-        with st.expander(f"💎 Total Aset: {format_rupiah(st.session_state.total_aset)}", expanded=False):
-            if not st.session_state.master_produk.empty:
-                df_aset = st.session_state.master_produk[['SKU', 'Nama_Produk', 'Stok_Saat_Ini', 'Harga_Beli']].copy()
-                df_aset = df_aset[df_aset['Stok_Saat_Ini'] > 0]
-                df_aset['Nilai'] = df_aset['Stok_Saat_Ini'] * df_aset['Harga_Beli']
-                df_aset = df_aset.sort_values('Nilai', ascending=False)
-                for col in ['Harga_Beli', 'Nilai']:
-                    df_aset[col] = df_aset[col].apply(format_rupiah)
-                st.dataframe(df_aset, use_container_width=True, height=250, hide_index=True)
-    with col5:
-        color = "#10b981" if roas >= st.session_state.target_roas else "#ef4444"
-        st.markdown(f"""<div class="metric-card"><div style="font-size:24px;">📈</div><div class="metric-value" style="color:{color}">{roas}</div><div class="metric-label">ROAS (Target: {st.session_state.target_roas})</div></div>""", unsafe_allow_html=True)
-    
-    # ============================================================
-    # SPEEDOMETER ROAS (KOMPLIT + CHECKBOX)
-    # ============================================================
-    st.markdown("---")
-    st.subheader("🎯 Speedometer ROAS")
-    
-    if not st.session_state.iklan_data.empty:
-        df_sp = st.session_state.iklan_data.copy()
-        col_nama = 'Nama Iklan' if 'Nama Iklan' in df_sp.columns else None
-        col_kode = 'Kode Produk' if 'Kode Produk' in df_sp.columns else None
-        col_terjual = 'Produk Terjual' if 'Produk Terjual' in df_sp.columns else None
-        col_omzet = 'Omzet Penjualan' if 'Omzet Penjualan' in df_sp.columns else None
-        col_biaya = 'Biaya' if 'Biaya' in df_sp.columns else None
-        col_toko = 'Nama Toko' if 'Nama Toko' in df_sp.columns else None
-        col_tgl = 'Tanggal' if 'Tanggal' in df_sp.columns else None
-        
-        for c in [col_terjual, col_omzet, col_biaya]:
-            if c: df_sp[c] = pd.to_numeric(df_sp[c].astype(str).str.replace(r'[^\d]', '', regex=True), errors='coerce').fillna(0).astype(int)
-        if col_tgl: df_sp[col_tgl] = pd.to_datetime(df_sp[col_tgl], errors='coerce')
-        
-        toko_list = ['Semua'] + (sorted(df_sp[col_toko].dropna().unique().tolist()) if col_toko else [])
-        toko_pilih = st.selectbox("🏪 Toko", toko_list, key="dash_toko")
-        if toko_pilih != 'Semua': df_sp = df_sp[df_sp[col_toko] == toko_pilih]
-        
-        df_grouped = df_sp.groupby([col_kode, col_nama]).agg({col_terjual:'sum', col_omzet:'sum', col_biaya:'sum'}).reset_index()
-        df_grouped[col_kode] = df_grouped[col_kode].astype(str).str.strip()
-        df_grouped[col_nama] = df_grouped[col_nama].astype(str).str.strip()
-        
-        # Checkbox
-        col_cek1, col_cek2 = st.columns(2)
-        with col_cek1:
-            lihat_zombie = st.checkbox("💀 Zombie (0 penjualan)", value=False, key="cek_zombie")
-        with col_cek2:
-            lihat_rugi = st.checkbox("🔴 Rugi (ROAS < Min)", value=False, key="cek_rugi")
-        
-        # Default: hanya yang ada penjualan
-        if not lihat_zombie:
-            df_show = df_grouped[df_grouped[col_terjual] > 0].copy()
-        else:
-            df_show = df_grouped.copy()
-        
-        if df_show.empty:
-            st.info("📭 Tidak ada iklan.")
-        else:
-            daftar_iklan = [f"{row[col_kode]} - {row[col_nama][:50]}" for _, row in df_show.iterrows()]
-            pilih = st.selectbox("🎯 Pilih Iklan", daftar_iklan, key="dash_pilih")
-            kode_pilih = pilih.split(' - ')[0].strip()
-            match = df_show[df_show[col_kode] == kode_pilih]
-            
-            if not match.empty:
-                row = match.iloc[0]
-                nama = str(row[col_nama]); terjual = int(row[col_terjual])
-                omzet = int(row[col_omzet]); biaya = int(row[col_biaya])
-                ra = round(omzet/biaya, 1) if biaya > 0 else 0
-                
-                kode_to_sku = {
-                    '23702055121':'Sling5x3M','28171008905':'Sling4x3M','55200717478':'Sling5x5M',
-                    '9084726015':'07-470','12684449528':'1108-150','44857049532':'TAFF-30ML',
-                    '26643764706':'PIPE-1PC','11008281950':'59-135s','47102879955':'Velcro-8inch',
-                    '22584521485':'45-600','8035948643':'AU-AC0984','8574235086':'HK-LS1200',
-                    '16834420649':'1108-150','9412670154':'07-470',
-                }
-                sku = kode_to_sku.get(kode_pilih, '-')
-                hpp = 0; hj_default = 0
-                
-                if sku != '-' and not st.session_state.master_produk.empty:
-                    mp = st.session_state.master_produk
-                    m = mp[mp['SKU'].astype(str).str.upper() == sku.upper()]
-                    if not m.empty:
-                        hpp = int(m['Harga_Beli'].iloc[0]) + int(m['Packing'].iloc[0])
-                        if 'Harga_Jual_Default' in mp.columns:
-                            val = pd.to_numeric(m['Harga_Jual_Default'].iloc[0], errors='coerce')
-                            hj_default = int(val) if pd.notna(val) else 0
-                
-                if hj_default == 0: hj_default = omzet // terjual if terjual > 0 else 0
-                roas_min = round(hj_default / (hj_default - hpp), 1) if (hj_default - hpp) > 0 else 0
-                laba_pc = hj_default - hpp
-                
-                # Filter Rugi
-                if lihat_rugi and ra >= roas_min:
-                    st.info("ℹ️ Iklan ini UNTUNG, tidak termasuk kategori rugi.")
-                    st.stop()
-                
-                col_sp1, col_sp2 = st.columns([1, 1])
-                with col_sp1:
-                    fig = go.Figure(go.Indicator(
-                        mode="gauge+number+delta",
-                        value=ra, delta={'reference': roas_min, 'increasing': {'color': "green"}},
-                        gauge={
-                            'axis': {'range': [0, max(ra*1.5, roas_min*2, 10)]},
-                            'bar': {'color': "green" if ra >= roas_min else "red"},
-                            'steps': [
-                                {'range': [0, roas_min], 'color': "rgba(255,0,0,0.2)"},
-                                {'range': [roas_min, max(ra, roas_min*2)], 'color': "rgba(0,255,0,0.2)"}],
-                            'threshold': {'line': {'color': "red", 'width': 3}, 'value': roas_min}
-                        },
-                        title={'text': f"ROAS<br><sup>Min: {roas_min}x</sup>"}
-                    ))
-                    fig.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20))
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                with col_sp2:
-                    st.markdown("### 📊 Detail")
-                    st.metric("📦 SKU", sku)
-                    st.metric("💰 Harga Jual", format_rupiah(hj_default))
-                    st.metric("💎 HPP", format_rupiah(hpp))
-                    st.metric("💵 Laba/PC", format_rupiah(laba_pc))
-                    st.metric("🎯 ROAS Minimal", f"{roas_min}x")
-                    st.metric("📈 ROAS Aktual", f"{ra}x")
-                    
-                    if ra >= roas_min and ra > 0:
-                        st.success(f"✅ UNTUNG! ROAS {ra}x > Minimal {roas_min}x")
-                    elif ra > 0:
-                        st.error(f"❌ RUGI! ROAS {ra}x < Minimal {roas_min}x")
-                    else:
-                        st.warning("💀 ZOMBIE! 0 penjualan")
-                
-                st.markdown("---")
-                c1,c2,c3 = st.columns(3)
-                c1.metric("💰 Omzet", format_rupiah(omzet))
-                c2.metric("📢 Biaya Iklan", format_rupiah(biaya))
-                c3.metric("📦 Terjual", f"{terjual} pcs")
-                
-                if col_tgl:
-                    st.markdown("---")
-                    st.subheader("📈 Tren ROAS Harian")
-                    df_tren = df_sp[df_sp[col_kode].astype(str).str.strip() == kode_pilih].copy()
-                    df_tren['Tanggal'] = df_tren[col_tgl].dt.date
-                    tren = df_tren.groupby('Tanggal').agg({col_omzet:'sum', col_biaya:'sum'}).reset_index()
-                    tren['ROAS'] = round(tren[col_omzet] / tren[col_biaya].replace(0, 1), 1)
-                    
-                    fig2 = go.Figure()
-                    fig2.add_trace(go.Bar(x=tren['Tanggal'], y=tren[col_omzet], name='Omzet', marker_color='green'))
-                    fig2.add_trace(go.Bar(x=tren['Tanggal'], y=tren[col_biaya], name='Biaya', marker_color='red'))
-                    fig2.add_trace(go.Scatter(x=tren['Tanggal'], y=tren['ROAS']*10000, name='ROAS (x10K)', yaxis='y2', line=dict(color='blue', width=3)))
-                    fig2.update_layout(height=250, margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation='h', y=1.1))
-                    st.plotly_chart(fig2, use_container_width=True)
-    else:
-        st.info("📭 Upload data iklan dulu.")
+    col1.metric("📦 Total Pesanan", f"{tp:,}".replace(',', '.'))
+    col2.metric("🛒 Invoice", f"{tps:,}".replace(',', '.'))
+    col3.metric("💰 Total Penjualan", f"Rp {int(tpen):,}".replace(',', '.'))
+    col4.metric("💎 Total Aset", f"Rp {int(total_aset_stok):,}".replace(',', '.'))
+    col5.metric("📈 ROAS", f"{roas}x")
 
 # =====================================
 # 🤖 ANALISIS - DOKTER SPESIALIS + BUDGET
